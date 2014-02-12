@@ -1,45 +1,73 @@
-Raven-cron : error reporting for cron commands
-================================================
+# fluent-cron : error reporting for cron commands
 
-Raven-cron is a small command-line wrapper that reports errors to
-[Sentry](http://getsentry.com) if the script exits with an exit status other
+fluent-cron is a small command-line wrapper that reports errors to
+[Fluentd](http://fluentd.org) if the script exits with an exit status other
 than zero.
 
-Install
--------
+It has forked from [raven-cron](https://github.com/mediacore/raven-cron).
 
-`pip install raven-cron`
+## Install
 
-Usage
------
+Install with following commands. Dependent packages will be installed `fluent-logger` and `msgpack-python` at the same time.
+
+```sh
+$ sudo pip install git+https://github.com/y-ken/fluent-cron.git
+```
+
+## Usage
 
 ```
-usage: raven-cron [-h] [--dsn SENTRY_DSN] [--version] cmd [cmd ...]
+usage: fluent-cron [-h] [--config FLUENT_CONFIG] [--version] cmd [cmd ...]
 
-Wraps commands and reports failing ones to sentry.
+Wraps commands and reports failing ones to Fluentd.
 
 positional arguments:
-  cmd               The command to run
+  cmd                     The command to run
 
 optional arguments:
-  -h, --help        show this help message and exit
-  --dsn SENTRY_DSN  Sentry server address
-  --version         show program's version number and exit
+  -h, --help              show this help message and exit
+  --config FLUENT_CONFIG  Fluentd connection options
+  --version               show program's version number and exit
 
-SENTRY_DSN can also be passed as an environment variable.
+FLUENT_CONFIG can also be passed as an environment variable.
 ```
 
-Example
--------
+## Example
 
 `crontab -e`
+
+
 ```
-SENTRY_DSN=https://<your_key>:<your_secret>@app.getsentry.com/<your_project_id>
-@reboot raven-cron ./my-process
+30 * * * * fluent-cron --config "tag:myapp.cron" /path/to/some-task.sh
+
+FLUENT_CONFIG="tag:myapp.cron;host:localhost;port:24224"
+30 * * * * fluent-cron /path/to/some-task.sh
+
+FLUENT_CONFIG="tag:myapp.cron;host:localhost;port:24224"
+30 * * * * fluent-cron "php /path/to/some-task.php"
 ```
 
-Misc
-----
+## data structure
 
-Copyright 2013 to MediaCore Technologies and licensed under the MIT license.
+* command: executed commands
+* exit_status: 1 or more number
+* message: e.g. `Command foo failed`
+* last_lines: last 1000 lines of script stdout and stderr
+* time_spent: execution elapsed time as micro seconds
 
+## Restrictions
+
+Pull requests are very welcome!!
+I'm awaiting pull requests like below.
+
+* support multiple commands like below.<br>
+It works: `fluent-cron "script1.sh && script2.sh"`<br>
+It won't works: `fluent-cron script1.sh && script2.sh`
+
+## Copyright
+
+Copyright © 2014- Kentaro Yoshida (@yoshi_ken)
+
+## License
+
+* MIT License http://www.opensource.org/licenses/mit-license.php

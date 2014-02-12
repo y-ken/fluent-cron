@@ -9,6 +9,7 @@ from sys import argv
 from time import time
 from .version import VERSION
 import re
+import argparse
 
 MAX_MESSAGE_SIZE = 1000
 
@@ -17,9 +18,9 @@ parser = ArgumentParser(
     epilog='FLUENT_CONF can also be passed as an environment variable.',
 )
 parser.add_argument(
-    '--conf',
-    metavar='FLUENT_CONF',
-    default=getenv('FLUENT_CONF'),
+    '--config',
+    metavar='FLUENT_CONFIG',
+    default=getenv('FLUENT_CONFIG'),
     help='Fluentd logging configurations',
 )
 parser.add_argument(
@@ -29,7 +30,7 @@ parser.add_argument(
 )
 parser.add_argument(
     'cmd',
-    nargs='+',
+    nargs=argparse.REMAINDER,
     help='The command to run',
 )
 
@@ -70,13 +71,14 @@ class CommandReporter(object):
 
         self.command = cmd
 
-        pattern = re.compile('(\w+):(\w+|\([^)]+\));?')
-        config = dict(pattern.findall(config))
-        if config['host'] is None:
-            config['host'] = 'locahost'
-        if config['port'] is None:
-            config['port'] = 24224
-        sender.setup(config['tag'], config['host'], config['port'])
+        if not config is None:
+            pattern = re.compile('(\w+):(\w+|\([^)]+\));?')
+            param = dict(pattern.findall(config))
+        if param.get('host') is None:
+            param['host'] = 'localhost'
+        if param.get('port') is None:
+            param['port'] = 24224
+        sender.setup(param['tag'], host=param['host'], port=param['port'])
 
     def run(self):
         buf = TemporaryFile()
