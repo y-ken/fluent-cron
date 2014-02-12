@@ -1,24 +1,26 @@
 from getpass import getuser
 from os import getenv, path, SEEK_END
-from raven import Client
+from fluent import sender
+from fluent import event
 from subprocess import call
 from tempfile import TemporaryFile
 from argparse import ArgumentParser
 from sys import argv
 from time import time
 from .version import VERSION
+import re
 
 MAX_MESSAGE_SIZE = 1000
 
 parser = ArgumentParser(
-    description='Wraps commands and reports failing ones to sentry.',
-    epilog='SENTRY_DSN can also be passed as an environment variable.',
+    description='Wraps commands and reports failing ones to fluentd.',
+    epilog='FLUENT_CONF can also be passed as an environment variable.',
 )
 parser.add_argument(
-    '--dsn',
-    metavar='SENTRY_DSN',
-    default=getenv('SENTRY_DSN'),
-    help='Sentry server address',
+    '--conf',
+    metavar='FLUENT_CONF',
+    default=getenv('FLUENT_CONF'),
+    help='Fluentd logging configurations',
 )
 parser.add_argument(
     '--version',
@@ -31,7 +33,7 @@ parser.add_argument(
     help='The command to run',
 )
 
-def update_dsn(opts):
+def update_config(opts):
     """Update the Sentry DSN stored in local configs
 
     It's assumed that the file contains a DSN endpoint like this:
@@ -42,33 +44,39 @@ def update_dsn(opts):
     """
 
     homedir = path.expanduser('~%s' % getuser())
-    home_conf_file = path.join(homedir, '.raven-cron')
-    system_conf_file = '/etc/raven-cron.conf'
+    home_conf_file = path.join(homedir, '.fluent-cron')
+    system_conf_file = '/etc/fluent-cron.conf'
 
     conf_precedence = [home_conf_file, system_conf_file]
     for conf_file in conf_precedence:
         if path.exists(conf_file):
             with open(conf_file, "r") as conf:
-                opts.dsn = conf.read().rstrip()
+                opts.config = conf.read().rstrip()
             return
 
 def run(args=argv[1:]):
     opts = parser.parse_args(args)
 
     # Command line takes precendence, otherwise check for local configs
-    if not opts.dsn:
-        update_dsn(opts)
+    if not opts.config:
+        update_config(opts)
     runner = CommandReporter(**vars(opts))
     runner.run()
 
 class CommandReporter(object):
-    def __init__(self, cmd, dsn):
+    def __init__(self, cmd, config):
         if len(cmd) <= 1:
             cmd = cmd[0]
 
-        self.dsn = dsn
         self.command = cmd
-        self.client = None
+
+        pattern = re.compile('(\w+):(\w+|\([^)]+\));?')
+        config = dict(pattern.findall(config))
+        if config['host'] is None:
+            config['host'] = 'locahost'
+        if config['port'] is None:
+            config['port'] = 24224
+        sender.setup(config['tag'], config['host'], config['port'])
 
     def run(self):
         buf = TemporaryFile()
@@ -83,9 +91,6 @@ class CommandReporter(object):
         buf.close()
         
     def report_fail(self, exit_status, buf, elapsed):
-        if self.dsn is None:
-            return
-
         # Hack to get the file size since the tempfile doesn't exist anymore
         buf.seek(0, SEEK_END)
         file_size = buf.tell()
@@ -98,19 +103,11 @@ class CommandReporter(object):
 
         message="Command \"%s\" failed" % (self.command,)
 
-        if self.client is None:
-            self.client = Client(dsn=self.dsn)
-
-        self.client.captureMessage(
-            message,
-            data={
-                'logger': 'cron',
-            },
-            extra={
-                'command': self.command,
-                'exit_status': exit_status,
-                'last_lines': last_lines,
-            },
-            time_spent=elapsed
-        )
+        event.Event('', {
+           'command':     self.command,
+           'exit_status': exit_status,
+           'message':     message,
+           'last_lines':  last_lines,
+           'time_spent': elapsed,
+        })
 
